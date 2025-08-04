@@ -89,4 +89,42 @@ test.describe("Documents search functionality", () => {
     await expect(page.getByRole("row").filter({ hasText: document1.name })).toBeVisible();
     await expect(page.getByRole("row").filter({ hasText: document2.name })).not.toBeVisible();
   });
+
+  test("displays link to invite a lawyer", async ({ page }) => {
+    const { company } = await companiesFactory.createCompletedOnboarding();
+    const { user: admin } = await usersFactory.create();
+    await companyAdministratorsFactory.create({
+      companyId: company.id,
+      userId: admin.id,
+    });
+
+    await login(page, admin);
+    await page.goto("/documents");
+    const link = page.getByRole("link", { name: "Invite lawyer" });
+
+    await expect(link).toHaveAttribute("href", "/settings/administrator/roles?addMember=true");
+
+    await link.click();
+
+    await page.waitForURL("/settings/administrator/roles?addMember=true");
+    await expect(page.getByText("Add members")).toBeVisible();
+  });
+  test("does not show invite lawyer link for non-administrators", async ({ page }) => {
+    const { company } = await companiesFactory.createCompletedOnboarding();
+    const { companyContractor } = await companyContractorsFactory.create({
+      companyId: company.id,
+      role: "Test Contractor",
+    });
+    const contractorUser = await db.query.users.findFirst({
+      where: eq(users.id, companyContractor.userId),
+    });
+    assert(contractorUser !== undefined);
+
+    await login(page, contractorUser);
+    await page.goto("/documents");
+
+    await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+
+    await expect(page.getByRole("link", { name: "Invite lawyer" })).not.toBeVisible();
+  });
 });

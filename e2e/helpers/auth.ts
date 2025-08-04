@@ -11,8 +11,10 @@ export const fillOtp = async (page: Page) => {
   await otp.fill(TEST_OTP_CODE);
 };
 
-export const login = async (page: Page, user: typeof users.$inferSelect) => {
-  await page.goto("/login");
+export const login = async (page: Page, user: typeof users.$inferSelect, redirectTo?: string) => {
+  const pageUrl = redirectTo ? redirectTo : "/login";
+
+  if (redirectTo) await page.goto(pageUrl);
 
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("button", { name: "Log in" }).click();

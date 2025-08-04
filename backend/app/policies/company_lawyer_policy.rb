@@ -2,8 +2,10 @@
 
 class CompanyLawyerPolicy < ApplicationPolicy
   def create?
-    return false unless company.lawyers_enabled?
+    company_administrator?
+  end
 
-    company_administrator.present?
+  def destroy
+    company_administrator?
   end
 end

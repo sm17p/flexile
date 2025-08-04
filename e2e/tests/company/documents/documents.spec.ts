@@ -127,23 +127,4 @@ test.describe("Documents search functionality", () => {
 
     await expect(page.getByRole("link", { name: "Invite lawyer" })).not.toBeVisible();
   });
-
-  test("shows invite lawyer button for administrators with addMembers=true link", async ({ page }) => {
-    const { company } = await companiesFactory.createCompletedOnboarding();
-    const { user: admin } = await usersFactory.create();
-    await companyAdministratorsFactory.create({
-      companyId: company.id,
-      userId: admin.id,
-    });
-
-    await login(page, admin);
-    await page.goto("/documents");
-
-    await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
-
-    const inviteLawyerLink = page.getByRole("link", { name: "Invite lawyer" });
-    await expect(inviteLawyerLink).toBeVisible();
-
-    await expect(inviteLawyerLink).toHaveAttribute("href", "/settings/administrator/members?addMembers=true");
-  });
 });

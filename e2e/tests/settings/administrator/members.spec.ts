@@ -159,7 +159,7 @@ test.describe("Manage workspace roles", () => {
       await comboboxLocator.nth(3).click();
       await page.waitForSelector('[role="listbox"]', { state: "visible" });
       await page.locator('[role="listbox"]').getByRole("option", { name: "Admin" }).click();
-      await page.waitForSelector('[role="listbox"]', { state: "hidden" });
+      await expect(page.locator('[role="listbox"]')).toBeHidden();
 
       await page.getByRole("button", { name: "Add 4 Members" }).click();
 

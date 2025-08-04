@@ -52,3 +52,9 @@ export const optionGrantIssueDateRelationships = [
 ] as const;
 
 export const companyUpdatePeriods = ["month", "quarter", "year"] as const;
+
+// coderabbitai highlight in review:
+// Since equity is involved maybe a separation of concern between Admins, Investors
+// and Board Members could be taken into consideration for future product development
+export const workspaceMemberRoles = ["Owner", "Admin", "Lawyer", "Member"] as const;
+export type WorkspaceMemberRoles = (typeof workspaceMemberRoles)[number];

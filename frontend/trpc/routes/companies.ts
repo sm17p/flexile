@@ -250,7 +250,7 @@ export const companiesRouter = createRouter({
       return {
         id: user.externalId,
         email: user.email,
-        name: user.legalName ?? user.preferredName ?? user.email,
+        name: user.legalName ?? user.preferredName ?? `${user.email} (Invited)`,
         isAdmin,
         isLawyer,
         isMember,
@@ -293,18 +293,14 @@ export const companiesRouter = createRouter({
 
         // Handle server/database errors (422/500) - rare but possible
         try {
-          const json = await response.json();
-          console.log("🚀 ~ json:", json);
-          const { error } = z.object({ error: z.string() }).parse(json);
+          // TODO(Smit): Verify error integration
+          const { error } = z.object({ error: z.string() }).parse(await response.json());
           throw new TRPCError({ code: "BAD_REQUEST", message: error });
-        } catch (error) {
-          console.log("🚀 ~ error:", error.message);
-          // Fallback for unexpected error formats
+        } catch {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Server error occurred" });
         }
       }
 
-      // Success case - parse and return the structured response
       const successResponse = z
         .object({
           success: z.literal(true),
@@ -315,22 +311,18 @@ export const companiesRouter = createRouter({
         .parse(await response.json());
       return successResponse;
     } catch (error) {
-      // Re-throw TRPCErrors as-is
       if (error instanceof TRPCError) {
         throw error;
       }
 
-      // Handle network/fetch errors
       if (error instanceof TypeError && error.message.includes("fetch")) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Network error occurred" });
       }
 
-      // Handle JSON parsing errors
       if (error instanceof SyntaxError) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Invalid response from server" });
       }
 
-      // Handle other unexpected errors
       throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
     }
   }),

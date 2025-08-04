@@ -44,7 +44,7 @@ class BatchManageWorkspaceMembers
     end
 
     # Queue batch email job after transaction commits
-    BatchSendInvitationEmailsJob.perform_later(@pending_invitations) if @pending_invitations.any?
+    BatchSendInvitationEmailsJob.perform_later(@pending_invitations, wait: 3.seconds) if @pending_invitations.any?
 
     errors.any? ? failure_response(errors) : success_response
   rescue => e

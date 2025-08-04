@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
-class BatchSendInvitationEmailsJob < ApplicationJob
-  queue_as :default
+class BatchSendInvitationEmailsJob
+  include Sidekiq::Worker
+  sidekiq_options retry: 5, queue: :default
 
   def perform(invitations)
     invitations.each do |invitation_data|
@@ -90,7 +91,7 @@ class BatchSendInvitationEmailsJob < ApplicationJob
         CompanyLawyerMailer.invitation_instructions(
           lawyer_id: company_member.id,
           url: clerk_invitation_url
-        ).deliver_now
+        ).deliver_later(queue: :mailers)
       end
     rescue => e
       Rails.logger.warn "Failed to send invitation email for new #{role} #{user.email}: #{e.message}"

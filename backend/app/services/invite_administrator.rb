@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class InviteLawyer
+class InviteAdministrator
   def initialize(company:, email:, current_user:)
     @company = company
     @email = email
@@ -8,18 +8,18 @@ class InviteLawyer
   end
 
   def perform
-    user = User.find_or_initialize_by(email:)
+    user = User.find_or_initialize_by(email: email)
     return { success: false, field: "email", error_message: "Email has already been taken" } if user.persisted?
 
-    company_lawyer = user.company_lawyers.find_or_create_by(company: company)
+    company_administrator = user.company_administrators.find_or_create_by(company: company)
     user.invite!(current_user) { |u| u.skip_invitation = true }
 
     if user.errors.blank?
-      InviteLawyer.send_email(lawyer_id: company_lawyer.id, url: user.create_clerk_invitation)
+      InviteAdministrator.send_email(admin_id: company_administrator.id, url: user.create_clerk_invitation)
       { success: true }
     else
-      error_object = if company_lawyer.errors.any?
-        company_lawyer
+      error_object = if company_administrator.errors.any?
+        company_administrator
       else
         user
       end
@@ -27,9 +27,9 @@ class InviteLawyer
     end
   end
 
-  def self.send_email(lawyer_id:, url:)
-    CompanyLawyerMailer.invitation_instructions(
-      lawyer_id: lawyer_id,
+  def self.send_email(admin_id:, url:)
+    CompanyAdministratorMailer.invitation_instructions(
+      admin_id: admin_id,
       url: url
     ).deliver_later
   end

@@ -2,7 +2,9 @@
 
 class CompanyLawyerMailer < ApplicationMailer
   def invitation_instructions(lawyer_id:, url:)
-    company_lawyer = CompanyLawyer.find(lawyer_id)
+    company_lawyer = CompanyLawyer.find_by(id: lawyer_id)
+    return unless company_lawyer
+
     user = company_lawyer.user
     @company = company_lawyer.company
     @url = url

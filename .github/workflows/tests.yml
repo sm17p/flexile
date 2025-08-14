@@ -11,10 +11,6 @@ concurrency:
 env:
   RAILS_ENV: test
   NODE_TLS_REJECT_UNAUTHORIZED: 0
-  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
-  STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-  WISE_API_KEY: ${{ secrets.WISE_API_KEY }}
-  WISE_PROFILE_ID: ${{ secrets.WISE_PROFILE_ID }}
 
 jobs:
   setup:
@@ -22,8 +18,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+
     steps:
       - uses: actions/checkout@v4
+
+      # Generate and output the cache key for test jobs
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          CACHE_KEY="setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-${{ github.sha }}"
+          echo "key=$CACHE_KEY" >> $GITHUB_OUTPUT
+          echo "Cache key: $CACHE_KEY"
 
       # Enhanced caching strategy
       - name: Cache Ruby gems
@@ -68,14 +75,6 @@ jobs:
           set -e  # Exit on any error
           REPO_ROOT=$(pwd)
 
-          # Install system dependencies first (can't be parallelized)
-          sudo apt update
-          sudo apt install libnss3-tools
-
-          # Download mkcert binary
-          curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64" &
-          MKCERT_DOWNLOAD_PID=$!
-
           # Configure bundler to use cache
           cd "$REPO_ROOT/backend"
           bundle config path vendor/bundle
@@ -97,17 +96,10 @@ jobs:
           gem install foreman &
           GEM_PID=$!
 
-          # Wait for mkcert download and install it
-          wait $MKCERT_DOWNLOAD_PID || { echo "mkcert download failed"; exit 1; }
-          chmod +x mkcert-v*-linux-amd64
-          sudo cp mkcert-v*-linux-amd64 /usr/local/bin/mkcert &
-          MKCERT_INSTALL_PID=$!
-
           # Wait for all installations and check exit codes
           wait $BUNDLE_PID || { echo "Bundle install failed"; exit 1; }
           wait $PNPM_PID || { echo "pnpm install failed"; exit 1; }
           wait $GEM_PID || { echo "Gem install failed"; exit 1; }
-          wait $MKCERT_INSTALL_PID || { echo "mkcert install failed"; exit 1; }
 
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
             wait $PLAYWRIGHT_PID || { echo "Playwright install failed"; exit 1; }
@@ -115,10 +107,6 @@ jobs:
 
           echo "All dependencies and tools installed successfully!"
 
-      - name: Create certificates
-        run: |
-          mkdir -p certificates
-          node docker/createCertificate.js
 
       - name: Build Next.js
         run: |
@@ -140,13 +128,19 @@ jobs:
             frontend/.next
             ~/.cache/ms-playwright
             certificates
-          key: setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-${{ github.sha }}
+          key: ${{ steps.cache-key.outputs.key }}
+
+      # Signal that setup is complete
+      - name: Signal setup completion
+        run: |
+          echo "✅ Setup completed successfully!"
+          echo "Cache key: ${{ steps.cache-key.outputs.key }}"
 
   playwright-tests:
     name: playwright-${{ matrix.shardIndex }}
     runs-on: ubuntu-latest
-    needs: setup
-    timeout-minutes: 10
+    needs: setup  # Keep dependency but start services early
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -176,9 +170,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Restore complete setup from cache with fallback
-      - name: Restore complete setup
-        id: restore-setup
+      - uses: ./.github/common/
+
+      # Simple and reliable cache restore with debugging
+      - name: Restore setup cache
+        id: restore-cache
         uses: actions/cache@v4
         with:
           path: |
@@ -193,43 +189,62 @@ jobs:
             setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-
             setup-${{ runner.os }}-
 
-      # Fallback setup if cache miss (shouldn't happen with needs: setup, but safety net)
-      - name: Fallback setup (if cache miss)
-        if: steps.restore-setup.outputs.cache-hit != 'true'
+      # Debug cache status
+      - name: Debug cache status
         run: |
-          echo "⚠️ Cache miss detected - running fallback setup"
-          echo "This shouldn't happen with needs: setup, investigating..."
+          echo "🔍 Cache Debug Info:"
+          echo "Cache hit: ${{ steps.restore-cache.outputs.cache-hit }}"
+          echo "Cache matched key: ${{ steps.restore-cache.outputs.cache-matched-key }}"
+          echo "Primary key: setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-${{ github.sha }}"
+          echo ""
+          echo "📁 Checking what was restored:"
+          ls -la backend/vendor/bundle/ 2>/dev/null || echo "❌ No bundle directory"
+          ls -la node_modules/ 2>/dev/null || echo "❌ No node_modules"
+          ls -la frontend/.next/ 2>/dev/null || echo "❌ No Next.js build"
+          ls -la certificates/ 2>/dev/null || echo "❌ No certificates"
+          ls -la ~/.cache/ms-playwright/ 2>/dev/null || echo "❌ No Playwright browsers"
 
-          # Quick dependency install as fallback
-          sudo apt update && sudo apt install libnss3-tools
+      - name: Verify setup
+        run: |
+          echo "🔍 Verifying setup files exist..."
+          ls -la backend/vendor/bundle/ || echo "⚠️ Bundle not found"
+          ls -la node_modules/ || echo "⚠️ Node modules not found"
+          ls -la frontend/.next/ || echo "⚠️ Next build not found"
+          ls -la certificates/ || echo "⚠️ Certificates not found"
+          ls -la ~/.cache/ms-playwright/ || echo "⚠️ Playwright not found"
+          echo "✅ Setup verification complete"
 
-          # Install bundler dependencies
-          cd backend
-          bundle config path vendor/bundle
-          bundle install --jobs 4
+      - name: Install all dependencies and tools
+        run: |
+          set -e  # Exit on any error
 
-          # Install pnpm dependencies
-          cd ..
-          pnpm install
+          # Install system dependencies first (can't be parallelized)
+          sudo apt-get update -qq        # fetch fresh index
+          sudo apt-get install -y libnss3-tools    # install what you need
+          sudo apt-get clean             # drop downloaded .debs
+          sudo rm -rf /var/lib/apt/lists/*
 
-          # Install playwright browsers
-          pnpm playwright install --with-deps chromium
+          # Download mkcert binary
+          curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64" &
+          MKCERT_DOWNLOAD_PID=$!
 
-          # Create certificates
+          # Wait for mkcert download and install it
+          wait $MKCERT_DOWNLOAD_PID || { echo "mkcert download failed"; exit 1; }
+          chmod +x mkcert-v*-linux-amd64
+          sudo cp mkcert-v*-linux-amd64 /usr/local/bin/mkcert &
+          MKCERT_INSTALL_PID=$!
+
+          # Wait for all installations and check exit codes
+          wait $MKCERT_INSTALL_PID || { echo "mkcert install failed"; exit 1; }
+
+          echo "All dependencies and tools installed successfully!"
+
+
+      - name: Create certificates & Trust self-signed certificates (Playwright only)
+        run: |
           mkdir -p certificates
           node docker/createCertificate.js
 
-          # Build Next.js
-          NODE_ENV=test pnpm run build-next --no-lint
-
-          echo "✅ Fallback setup completed"
-
-      - uses: ./.github/common/
-
-      - name: Trust self-signed certificates
-        run: |
-          # Ensure mkcert is available (lightweight install)
-          sudo apt update && sudo apt install libnss3-tools
           if [ -f "certificates/rootCA.pem" ]; then
             sudo cp certificates/rootCA.pem /usr/local/share/ca-certificates/mkcert-rootCA.crt
             sudo update-ca-certificates
@@ -239,28 +254,11 @@ jobs:
         run: |
           cd backend
           bundle config path vendor/bundle
-          bundle exec rails db:prepare
+          bundle exec rails db:drop db:create db:schema:load
 
       - name: Start all services
         run: |
-          cd backend
-
-          # Start Rails server
-          bundle exec rails server -p 3100 -e test -b 0.0.0.0 &
-          RAILS_PID=$!
-
-          # Start Sidekiq
-          bundle exec sidekiq -q default -q mailers &
-          SIDEKIQ_PID=$!
-
-          # Start Next.js
-          cd ..
-          TZ=UTC [ -n "$CI" ] && node e2e/next.js &
-          NEXT_PID=$!
-
-          # Start Inngest
-          pnpm inngest-cli dev --no-discovery -p 8298 -u https://test.flexile.dev:3101/api/inngest &
-          INNGEST_PID=$!
+          ./bin/test_server
 
           # Parallel health checks with faster polling
           echo "Waiting for services to start..."
@@ -276,6 +274,7 @@ jobs:
 
       - name: Run Playwright tests
         run: |
+          echo "🎭 Running Playwright tests for shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }}"
           pnpm playwright test \
             --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }} \
             --workers=2 \

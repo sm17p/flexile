@@ -17,13 +17,9 @@ env:
   NODE_TLS_REJECT_UNAUTHORIZED: 0
 
 jobs:
-  setup:
-    name: Setup
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    outputs:
-      cache-key: ${{ steps.cache-key.outputs.key }}
+  playwright:
+    name: playwright
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v4
@@ -38,14 +34,14 @@ jobs:
 
       # Enhanced caching strategy
       - name: Cache Ruby gems
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: backend/vendor/bundle
           key: gems-${{ runner.os }}-${{ hashFiles('backend/Gemfile.lock') }}
           restore-keys: gems-${{ runner.os }}-
 
       - name: Cache pnpm dependencies
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.pnpm-store
           key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -53,113 +49,43 @@ jobs:
 
       - name: Cache Next build
         id: next-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             frontend/.next/cache
             frontend/node_modules/.cache
             frontend/.next
-          key: next-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('frontend/**/*.{ts,tsx,js,jsx}') }}
+          key: next-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('frontend/**/*.{ts,tsx}') }}
           restore-keys: |
             next-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
             next-${{ runner.os }}-
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: playwright-${{ runner.os }}-
 
-      - uses: ./.github/common/
+      - name: Build setup
+        uses: ./.github/common/
 
-      - name: Install all dependencies and tools
-        run: |
-          set -e  # Exit on any error
-          REPO_ROOT=$(pwd)
+      - name: Install Playwright Browsers
+        run: pnpm playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
 
-          # Configure bundler to use cache
-          cd "$REPO_ROOT/backend"
-          bundle config path vendor/bundle
-          bundle install --jobs 4 &
-          BUNDLE_PID=$!
+      - run: node docker/createCertificate.js
 
-          # Install pnpm deps from root
-          cd "$REPO_ROOT"
-          pnpm install &
-          PNPM_PID=$!
+      - run: NODE_ENV=test pnpm run build-next --no-lint
+        shell: bash
 
-          # Install Playwright browsers if not cached
-          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
-            pnpm playwright install --with-deps chromium &
-            PLAYWRIGHT_PID=$!
-          fi
+      - name: Install foreman
+        run: gem install foreman
 
-          # Install foreman
-          gem install foreman &
-          GEM_PID=$!
-
-          # Wait for all installations and check exit codes
-          wait $BUNDLE_PID || { echo "Bundle install failed"; exit 1; }
-          wait $PNPM_PID || { echo "pnpm install failed"; exit 1; }
-          wait $GEM_PID || { echo "Gem install failed"; exit 1; }
-
-          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
-            wait $PLAYWRIGHT_PID || { echo "Playwright install failed"; exit 1; }
-          fi
-
-          echo "All dependencies and tools installed successfully!"
-
-
-      - name: Build Next.js
-        run: |
-          if [ ! -d "frontend/.next" ] || [ "${{ steps.next-cache.outputs.cache-hit }}" != "true" ]; then
-            echo "Building Next.js..."
-            NODE_ENV=test pnpm run build-next --no-lint
-          else
-            echo "Using cached Next.js build"
-          fi
-
-      # Cache the complete setup for test jobs
+      # Cache the complete setup
       - name: Cache complete setup
-        uses: actions/cache@v4
-        with:
-          path: |
-            backend/vendor/bundle
-            node_modules
-            frontend/node_modules
-            frontend/.next
-            ~/.cache/ms-playwright
-            certificates
-          key: ${{ steps.cache-key.outputs.key }}
-
-      # Signal that setup is complete
-      - name: Signal setup completion
-        run: |
-          echo "✅ Setup completed successfully!"
-          echo "Cache key: ${{ steps.cache-key.outputs.key }}"
-
-  playwright-tests:
-    name: playwright-${{ matrix.shardIndex }}
-    runs-on: ubuntu-latest
-    needs: setup  # Keep dependency but start services early
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shardIndex: [1, 2]
-        shardTotal: [2]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/common/
-
-      # Simple and reliable cache restore with debugging
-      - name: Restore setup cache
-        id: restore-cache
-        uses: actions/cache@v4
+        uses: actions/cache/save@v4
         with:
           path: |
             backend/vendor/bundle
@@ -169,85 +95,17 @@ jobs:
             ~/.cache/ms-playwright
             certificates
           key: setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-keys: |
-            setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-
-            setup-${{ runner.os }}-
-
-      # Debug cache status
-      - name: Debug cache status
-        run: |
-          echo "🔍 Cache Debug Info:"
-          echo "Cache hit: ${{ steps.restore-cache.outputs.cache-hit }}"
-          echo "Cache matched key: ${{ steps.restore-cache.outputs.cache-matched-key }}"
-          echo "Primary key: setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-${{ github.sha }}"
-          echo ""
-          echo "📁 Checking what was restored:"
-          ls -la backend/vendor/bundle/ 2>/dev/null || echo "❌ No bundle directory"
-          ls -la node_modules/ 2>/dev/null || echo "❌ No node_modules"
-          ls -la frontend/.next/ 2>/dev/null || echo "❌ No Next.js build"
-          ls -la certificates/ 2>/dev/null || echo "❌ No certificates"
-          ls -la ~/.cache/ms-playwright/ 2>/dev/null || echo "❌ No Playwright browsers"
-
-      - name: Verify setup
-        run: |
-          echo "🔍 Verifying setup files exist..."
-          ls -la backend/vendor/bundle/ || echo "⚠️ Bundle not found"
-          ls -la node_modules/ || echo "⚠️ Node modules not found"
-          ls -la frontend/.next/ || echo "⚠️ Next build not found"
-          ls -la certificates/ || echo "⚠️ Certificates not found"
-          ls -la ~/.cache/ms-playwright/ || echo "⚠️ Playwright not found"
-          echo "✅ Setup verification complete"
-
-      - name: Install foreman
-        run: gem install foreman
-
-      - name: Create certificates
-        run: |
-          mkdir -p certificates
-          node docker/createCertificate.js
 
       - name: Run docker compose
         run: docker compose -f docker/docker-compose-local-linux.yml up -d
 
       - name: Run Playwright tests
-        run: |
-          echo "🎭 Running Playwright tests for shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }}"
-          pnpm playwright test \
-            --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }} \
-            --workers=3 \
-        timeout-minutes: 10
+        run: pnpm playwright test
 
-      - name: Upload blob report to GitHub Actions Artifacts
+
+      - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
         with:
-          name: blob-report-${{ matrix.shardIndex }}
-          path: blob-report
-          retention-days: 1
-
-  merge-reports:
-    if: ${{ !cancelled() }}
-    needs: [playwright-tests]
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/common/
-
-      - name: Download blob reports from GitHub Actions Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all-blob-reports
-          pattern: blob-report-*
-          merge-multiple: true
-
-      - name: Merge into HTML Report
-        run: pnpm playwright merge-reports --reporter html ./all-blob-reports
-
-      - name: Upload HTML report
-        uses: actions/upload-artifact@v4
-        with:
-          name: html-report--attempt-${{ github.run_attempt }}
-          path: playwright-report
-          retention-days: 14
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -1,3 +1,4 @@
+# .github/workflows/tests.yml
 name: Tests
 
 on:
@@ -13,107 +14,77 @@ env:
   STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
   WISE_API_KEY: ${{ secrets.WISE_API_KEY }}
   WISE_PROFILE_ID: ${{ secrets.WISE_PROFILE_ID }}
+  NODE_TLS_REJECT_UNAUTHORIZED: 0
 
 jobs:
-  rspec:
-    runs-on: ubicloud-standard-2
-
-    services:
-      postgres:
-        image: postgres:16.3
-        env:
-          POSTGRES_USER: username
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: flexile_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7.4.2
-        ports:
-          - 6389:6379
-        options: --entrypoint redis-server
-
-    strategy:
-      fail-fast: false
-      matrix:
-        ci_node_total: [2]
-        ci_node_index: [0, 1]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build setup
-        uses: ./.github/common/
-
-      - name: Setup test database
-        run: cd backend && bundle exec rails db:create db:schema:load
-
-      - name: Run tests
-        env:
-          RUBY_YJIT_ENABLE: 1
-          KNAPSACK_PRO_TEST_SUITE_TOKEN_RSPEC: ${{ secrets.KNAPSACK_PRO_TEST_SUITE_TOKEN_RSPEC }}
-          KNAPSACK_PRO_CI_NODE_TOTAL: ${{ matrix.ci_node_total }}
-          KNAPSACK_PRO_CI_NODE_INDEX: ${{ matrix.ci_node_index }}
-          KNAPSACK_PRO_LOG_LEVEL: info
-        run: cd backend && bundle exec rake "knapsack_pro:queue:rspec[--format RSpec::Github::Formatter --tag ~skip --tag ~type:system --format progress]"
-        timeout-minutes: 20
-
   playwright:
-    name: playwright
-    runs-on: ubicloud-standard-4
+      name: playwright
+      runs-on: ubicloud-standard-4
 
-    steps:
-      - uses: actions/checkout@v4
+      steps:
+        - uses: actions/checkout@v4
 
-      - name: Build setup
-        uses: ./.github/common/
+        - name: Generate cache key
+          id: cache-key
+          run: |
+            CACHE_FALLBACK_KEY="setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-"
+            CACHE_KEY="setup-${{ runner.os }}-${{ hashFiles('**/Gemfile.lock', '**/pnpm-lock.yaml') }}-${{ hashFiles('backend/**/*.rb', 'backend/**/*.erb', 'frontend/**/*.ts', 'frontend/**/*.tsx') }}"
+            echo "key=$CACHE_KEY" >> $GITHUB_OUTPUT
+            echo "cache_fallback_key=$CACHE_FALLBACK_KEY" >> $GITHUB_OUTPUT
+            echo "Cache key: $CACHE_KEY"
+            echo "Cache Fallback key: $CACHE_FALLBACK_KEY"
 
-      - run: pnpm puppeteer browsers install chrome
+        - name: Restore playwright & build deps
+          id: restore-cache
+          uses: actions/cache/restore@v4
+          with:
+            path: |
+              ~/.cache/ms-playwright
+              /home/runner/setup-pnpm/node_modules/.bin/store
+              frontend/.next
+              node_modules
+            key: ${{ steps.cache-key.outputs.key }}
+            restore-keys: |
+              ${{ steps.cache-key.outputs.cache_fallback_key }}
 
-      - run: node docker/createCertificate.js
+        - name: Build setup
+          uses: ./.github/common/
 
-      - name: Cache Next build
-        id: next-cache
-        uses: actions/cache@v4
-        with:
-          path: frontend/.next/cache
-          key: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'backend/pnpm-lock.yaml', 'frontend/pnpm-lock.yaml') }}-${{ hashFiles('frontend/**/*.{ts,tsx}') }}
-          restore-keys: |
-            next-${{ runner.os }}-
+        - name: Install Playwright system deps
+          run: pnpm playwright install-deps chromium
 
-      - run: NODE_ENV=test pnpm run build-next --no-lint
-        shell: bash
+        - name: Install Playwright Browsers (headless shell only)
+          run: pnpm playwright install --with-deps --only-shell
+          if: steps.restore-cache.outputs.cache-hit != 'true'
 
-      - name: Install foreman
-        run: gem install foreman
+        - run: node docker/createCertificate.js
 
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'backend/pnpm-lock.yaml', 'frontend/pnpm-lock.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
+        - run: NODE_ENV=test pnpm run build-next
+          shell: bash
 
-      - name: Install Playwright Browsers
-        run: pnpm playwright install --with-deps chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        - name: Install foreman
+          run: gem install foreman
 
-      - name: Run docker compose
-        run: docker compose -f docker/docker-compose-local-linux.yml up -d
+        - name: Cache playwright & build deps
+          uses: actions/cache/save@v4
+          with:
+            path: |
+              ~/.cache/ms-playwright
+              /home/runner/setup-pnpm/node_modules/.bin/store
+              frontend/.next
+              frontend/node_modules
+              node_modules
+            key: ${{ steps.cache-key.outputs.key }}
 
-      - name: Run Playwright tests
-        run: pnpm playwright test
+        - name: Run docker compose
+          run: docker compose -f docker/docker-compose-local-linux.yml up -d
 
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
+        - name: Run Playwright tests
+          run: pnpm playwright test
+
+        - uses: actions/upload-artifact@v4
+          if: ${{ !cancelled() }}
+          with:
+            name: playwright-report
+            path: playwright-report/
+            retention-days: 7

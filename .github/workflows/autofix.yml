@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   autofix:
+    if: false
     runs-on: ubicloud-standard-2
 
     steps:

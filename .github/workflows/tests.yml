@@ -19,7 +19,7 @@ env:
 jobs:
   playwright:
     name: playwright
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -33,21 +33,21 @@ jobs:
           echo "Cache key: $CACHE_KEY"
 
       # Enhanced caching strategy
-      - name: Cache Ruby gems
+      - name: Restore Ruby gems
         uses: actions/cache/restore@v4
         with:
           path: backend/vendor/bundle
           key: gems-${{ runner.os }}-${{ hashFiles('backend/Gemfile.lock') }}
           restore-keys: gems-${{ runner.os }}-
 
-      - name: Cache pnpm dependencies
+      - name: Restore pnpm dependencies
         uses: actions/cache/restore@v4
         with:
           path: ~/.pnpm-store
           key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: pnpm-${{ runner.os }}-
 
-      - name: Cache Next build
+      - name: Restore Next build
         id: next-cache
         uses: actions/cache/restore@v4
         with:
@@ -60,7 +60,7 @@ jobs:
             next-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
             next-${{ runner.os }}-
 
-      - name: Cache Playwright browsers
+      - name: Restore Playwright browsers
         id: playwright-cache
         uses: actions/cache/restore@v4
         with:

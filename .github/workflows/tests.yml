@@ -9,7 +9,11 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
   RAILS_ENV: test
+  STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+  WISE_API_KEY: ${{ secrets.WISE_API_KEY }}
+  WISE_PROFILE_ID: ${{ secrets.WISE_PROFILE_ID }}
   NODE_TLS_REJECT_UNAUTHORIZED: 0
 
 jobs:
@@ -144,28 +148,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shardIndex: [1, 2, 3, 4]
-        shardTotal: [4]
-
-    services:
-      postgres:
-        image: postgres:16.3
-        env:
-          POSTGRES_USER: username
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: flexile_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7.4.2
-        ports:
-          - 6389:6379
-        options: --entrypoint redis-server
+        shardIndex: [1, 2]
+        shardTotal: [2]
 
     steps:
       - uses: actions/checkout@v4
@@ -214,71 +198,23 @@ jobs:
           ls -la ~/.cache/ms-playwright/ || echo "⚠️ Playwright not found"
           echo "✅ Setup verification complete"
 
-      - name: Install all dependencies and tools
-        run: |
-          set -e  # Exit on any error
+      - name: Install foreman
+        run: gem install foreman
 
-          # Install system dependencies first (can't be parallelized)
-          sudo apt-get update -qq        # fetch fresh index
-          sudo apt-get install -y libnss3-tools    # install what you need
-          sudo apt-get clean             # drop downloaded .debs
-          sudo rm -rf /var/lib/apt/lists/*
-
-          # Download mkcert binary
-          curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64" &
-          MKCERT_DOWNLOAD_PID=$!
-
-          # Wait for mkcert download and install it
-          wait $MKCERT_DOWNLOAD_PID || { echo "mkcert download failed"; exit 1; }
-          chmod +x mkcert-v*-linux-amd64
-          sudo cp mkcert-v*-linux-amd64 /usr/local/bin/mkcert &
-          MKCERT_INSTALL_PID=$!
-
-          # Wait for all installations and check exit codes
-          wait $MKCERT_INSTALL_PID || { echo "mkcert install failed"; exit 1; }
-
-          echo "All dependencies and tools installed successfully!"
-
-
-      - name: Create certificates & Trust self-signed certificates (Playwright only)
+      - name: Create certificates
         run: |
           mkdir -p certificates
           node docker/createCertificate.js
 
-          if [ -f "certificates/rootCA.pem" ]; then
-            sudo cp certificates/rootCA.pem /usr/local/share/ca-certificates/mkcert-rootCA.crt
-            sudo update-ca-certificates
-          fi
-
-      - name: Setup test database
-        run: |
-          cd backend
-          bundle config path vendor/bundle
-          bundle exec rails db:drop db:create db:schema:load
-
-      - name: Start all services
-        run: |
-          ./bin/test_server
-
-          # Parallel health checks with faster polling
-          echo "Waiting for services to start..."
-          timeout 30 bash -c 'until curl -s http://localhost:3100/health > /dev/null 2>&1; do sleep 0.5; done' &
-          RAILS_HEALTH=$!
-
-          timeout 30 bash -c 'until curl -k https://test.flexile.dev:3101/api/health > /dev/null 2>&1; do sleep 0.5; done' &
-          NEXT_HEALTH=$!
-
-          # Wait for health checks to complete
-          wait $RAILS_HEALTH $NEXT_HEALTH
-          echo "All services are ready!"
+      - name: Run docker compose
+        run: docker compose -f docker/docker-compose-local-linux.yml up -d
 
       - name: Run Playwright tests
         run: |
           echo "🎭 Running Playwright tests for shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }}"
           pnpm playwright test \
             --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }} \
-            --workers=2 \
-            --max-failures=5
+            --workers=3 \
         timeout-minutes: 10
 
       - name: Upload blob report to GitHub Actions Artifacts
@@ -296,13 +232,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Load test environment
-        run: |
-          if [ -f .env.test ]; then
-            echo "Loading environment from .env.test"
-            cat .env.test >> $GITHUB_ENV
-          fi
 
       - uses: ./.github/common/
 

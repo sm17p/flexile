@@ -77,7 +77,7 @@ jobs:
 
       - run: node docker/createCertificate.js
 
-      - run: NODE_ENV=test pnpm run build-next --no-lint
+      - run: NODE_ENV=test pnpm run build-next
         shell: bash
 
       - name: Install foreman

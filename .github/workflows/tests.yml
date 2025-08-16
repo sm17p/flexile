@@ -37,7 +37,7 @@ jobs:
         - name: Build setup
           uses: ./.github/common/
 
-        - name: Restore build deps
+        - name: Restore next build
           id: restore-cache
           uses: actions/cache/restore@v4
           with:
@@ -58,7 +58,7 @@ jobs:
         - name: Install foreman
           run: gem install foreman
 
-        - name: Cache build deps
+        - name: Cache next build
           id: save-cache
           uses: actions/cache/save@v4
           with:

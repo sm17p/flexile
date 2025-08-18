@@ -26,6 +26,7 @@ import { shareHoldingsRouter } from "./routes/shareHoldings";
 import { supportRouter } from "./routes/support";
 import { tenderOffersRouter } from "./routes/tenderOffers";
 import { usersRouter } from "./routes/users";
+import { workspaceRolesRouter } from "./routes/workspace-roles";
 import { createClient } from "./shared";
 import { createCallerFactory, createRouter } from "./";
 
@@ -58,6 +59,7 @@ export const appRouter = createRouter({
   administrators: administratorsRouter,
   companyInviteLinks: companyInviteLinksRouter,
   support: supportRouter,
+  workspaceRoles: workspaceRolesRouter,
 });
 export type AppRouter = typeof appRouter;
 

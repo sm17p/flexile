@@ -444,3 +444,58 @@ test.describe("Roles page invite functionality", () => {
     await expect(page.getByRole("button", { name: "Add member" })).toBeDisabled();
   });
 });
+
+test.describe("UnprivilegedUserComboBox integration (Step 1)", () => {
+  test("should display test button for UnprivilegedUserComboBox", async ({ page }) => {
+    const { adminUser } = await companiesFactory.createCompletedOnboarding();
+    await login(page, adminUser);
+    await page.goto("/settings/administrator/roles");
+
+    // Should show both the original "Add member" button and new test button
+    await expect(page.getByRole("button", { name: "Add member" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Test Unprivileged" })).toBeVisible();
+  });
+
+  test("should open and close UnprivilegedUserComboBox modal", async ({ page }) => {
+    const { adminUser } = await companiesFactory.createCompletedOnboarding();
+    await login(page, adminUser);
+    await page.goto("/settings/administrator/roles");
+
+    // Click test button
+    await page.getByRole("button", { name: "Test Unprivileged" }).click();
+
+    // Modal should open
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByText("Add a member (Step 1 - UnprivilegedUserComboBox)")).toBeVisible();
+
+    // Modal should have form elements
+    await expect(page.getByText("Select user or enter email")).toBeVisible();
+    await expect(page.getByText("Role")).toBeVisible();
+
+    // Close modal by clicking outside or using button
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+  });
+
+  test("should handle form submission in test modal", async ({ page }) => {
+    const { adminUser } = await companiesFactory.createCompletedOnboarding();
+    await login(page, adminUser);
+    await page.goto("/settings/administrator/roles");
+
+    // Open test modal
+    await page.getByRole("button", { name: "Test Unprivileged" }).click();
+
+    // Fill in a test email (bypass the combobox complexity for now)
+    const emailInput = page.getByPlaceholder("Select user or enter email to invite...");
+    await emailInput.fill("test@example.com");
+
+    // Select role
+    await selectComboboxOption(page, "Role", "Lawyer");
+
+    // Submit form
+    await page.getByRole("button", { name: "Add member (Test)" }).click();
+
+    // Modal should close (since we're just testing the integration)
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+  });
+});

@@ -2,13 +2,13 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { getFilteredRowModel, getSortedRowModel } from "@tanstack/react-table";
-import { MoreHorizontal, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { MoreHorizontal, Plus, SendHorizonal } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import AutocompleteInput from "@/components/AutocompleteInput";
 import ComboBox from "@/components/ComboBox";
 import DataTable, { createColumnHelper, useTable } from "@/components/DataTable";
+import { MutationStatusButton } from "@/components/MutationButton";
 import TableSkeleton from "@/components/TableSkeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,116 +28,48 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useCurrentCompany, useCurrentUser } from "@/global";
 import { trpc } from "@/trpc/client";
+import WorkspaceUserComboBox from "./WorkspaceUserComboBox";
 
-const createAddMemberSchema = (companyUsers: User[]) =>
-  z.object({
-    memberOrEmail: z
-      .string()
-      .min(1, "Please select a member or enter an email")
-      .superRefine((value, ctx) => {
-        // If it's an email (contains @), validate it as an email
-        if (value.includes("@")) {
-          const emailResult = z.string().email().safeParse(value);
-          if (!emailResult.success) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Please enter a valid email address" });
-          }
-        } else {
-          // If it's not an email, it should be a valid user ID that exists in the system
-          const existingUser = companyUsers.find((u) => u.id === value);
-          if (!existingUser) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Please select a valid member from the list" });
-          }
-        }
-      }),
-    role: z.enum(["admin", "lawyer"]),
-  });
+const addWorkspaceMemberSchema = z.object({
+  user: z.object({
+    id: z.string().or(z.undefined()),
+    name: z.string(),
+    email: z.string().min(1, "Please select a valid user").email("Please enter a valid email address"),
+    isContractor: z.boolean(),
+    isInvestor: z.boolean(),
+    isAdministrator: z.boolean(),
+    isLawyer: z.boolean(),
+  }),
+  role: z.enum(["admin", "lawyer"]),
+});
 
-type AddMemberForm = z.infer<ReturnType<typeof createAddMemberSchema>>;
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-}
-
-interface UserOrEmailInputProps {
-  value: string;
-  onChange: (value: string) => void;
-  users: User[];
-  placeholder?: string;
-  className?: string | undefined;
-}
-
-const UserOrEmailInput = ({
-  value,
-  onChange,
-  users,
-  placeholder = "Search by name or enter email...",
-  className,
-}: UserOrEmailInputProps) => {
-  const [inputValue, setInputValue] = useState("");
-
-  useEffect(() => {
-    const user = users.find((u) => u.id === value);
-    if (user) {
-      setInputValue(user.name); // Only show name
-    } else {
-      setInputValue(value);
-    }
-  }, [value, users]);
-
-  const options = users.map((user) => ({
-    value: user.id,
-    label: user.name,
-    email: user.email,
-    keywords: [user.name, user.email], // Enable searching by both name and email
-  }));
-
-  const handleInputChange = (val: string) => {
-    setInputValue(val);
-    onChange(val);
-  };
-
-  const handleSelect = (option: { value: string; label: string; email?: string }) => {
-    setInputValue(option.label); // Only show name
-    onChange(option.value);
-  };
-
-  const renderOption = (option: { value: string; label: string; email?: string }) => (
-    <div>
-      <div className="font-medium">{option.label}</div>
-      {option.email ? <div className="text-muted-foreground text-sm">{option.email}</div> : null}
-    </div>
-  );
-
-  return (
-    <AutocompleteInput
-      value={inputValue}
-      onChange={handleInputChange}
-      onOptionSelect={handleSelect}
-      options={options}
-      placeholder={placeholder}
-      className={className || ""}
-      renderOption={renderOption}
-    />
-  );
-};
+type WorkspaceMemberAdditionForm = z.infer<typeof addWorkspaceMemberSchema>;
 
 export default function RolesPage() {
   const company = useCurrentCompany();
   const currentUser = useCurrentUser();
   const [showAddModal, setShowAddModal] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState<{ id: string; name: string; role: string } | null>(null);
+  const trpcUtils = trpc.useUtils();
 
   const { data: adminsAndLawyers = [] } = trpc.companies.listCompanyUsers.useQuery({
     companyId: company.id,
     roles: ["administrators", "lawyers"],
   });
-  const { data: companyUsers = [] } = trpc.companies.listCompanyUsers.useQuery({ companyId: company.id });
 
-  const trpcUtils = trpc.useUtils();
+  const { data: workspaceUsers = [] } = trpc.workspaceRoles.usersWithoutRole.useQuery({
+    companyId: company.id,
+    excludeRoledUserIds: adminsAndLawyers.map((user) => user.id),
+  });
 
   const addRoleMutation = trpc.companies.addRole.useMutation({
+    onError: (error) => {
+      addMemberForm.clearErrors();
+      addMemberForm.setError("user", { message: error.message });
+    },
+    onMutate: () => {
+      void trpcUtils.companies.listCompanyUsers.cancel({ companyId: company.id, roles: ["administrators", "lawyers"] });
+    },
     onSuccess: async () => {
       await trpcUtils.companies.listCompanyUsers.invalidate();
       setShowAddModal(false);
@@ -146,6 +78,13 @@ export default function RolesPage() {
   });
 
   const inviteLawyerMutation = trpc.lawyers.invite.useMutation({
+    onError: (error) => {
+      addMemberForm.clearErrors();
+      addMemberForm.setError("user", { message: error.message });
+    },
+    onMutate: () => {
+      void trpcUtils.companies.listCompanyUsers.cancel({ companyId: company.id, roles: ["administrators", "lawyers"] });
+    },
     onSuccess: async () => {
       await trpcUtils.companies.listCompanyUsers.invalidate();
       setShowAddModal(false);
@@ -154,6 +93,13 @@ export default function RolesPage() {
   });
 
   const inviteAdminMutation = trpc.administrators.invite.useMutation({
+    onError: (error) => {
+      addMemberForm.clearErrors();
+      addMemberForm.setError("user", { message: error.message });
+    },
+    onMutate: () => {
+      void trpcUtils.companies.listCompanyUsers.cancel({ companyId: company.id, roles: ["administrators", "lawyers"] });
+    },
     onSuccess: async () => {
       await trpcUtils.companies.listCompanyUsers.invalidate();
       setShowAddModal(false);
@@ -168,11 +114,46 @@ export default function RolesPage() {
     },
   });
 
-  const addMemberSchema = useMemo(() => createAddMemberSchema(companyUsers), [companyUsers]);
+  const enrolledMembersEmailSet = useMemo(
+    () => new Set(adminsAndLawyers.map((member) => member.email)),
+    [adminsAndLawyers],
+  );
 
-  const addMemberForm = useForm<AddMemberForm>({
-    resolver: zodResolver(addMemberSchema),
-    defaultValues: { memberOrEmail: "", role: "admin" },
+  const addMemberForm = useForm<WorkspaceMemberAdditionForm>({
+    resolver: zodResolver(
+      addWorkspaceMemberSchema.superRefine((data, ctx) => {
+        if (enrolledMembersEmailSet.has(data.user.email)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Cannot invite members with a role assigned",
+            path: ["user"],
+          });
+        }
+
+        try {
+          z.string().email().parse(data.user.email);
+        } catch {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Please enter a valid email address",
+            path: ["user"],
+          });
+        }
+      }),
+    ),
+    defaultValues: {
+      role: "admin",
+    },
+  });
+
+  const inviteUserToWorkspace = !useWatch({
+    control: addMemberForm.control,
+    name: "user.id",
+  });
+
+  const selectedRole = useWatch({
+    control: addMemberForm.control,
+    name: "role",
   });
 
   const allRoles = useMemo(() => {
@@ -324,33 +305,31 @@ export default function RolesPage() {
     getSortedRowModel: getSortedRowModel(),
   });
 
-  const handleSubmit = (values: AddMemberForm) => {
-    // More comprehensive email regex pattern (same as in UserOrEmailInput)
-    const emailRegex =
-      /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/u;
-    const isEmail = emailRegex.test(values.memberOrEmail);
-    const existingUser = companyUsers.find((u) => u.id === values.memberOrEmail);
-
-    if (existingUser) {
-      addRoleMutation.mutate({
-        companyId: company.id,
-        userId: values.memberOrEmail,
-        role: values.role,
-      });
-    } else if (isEmail) {
-      if (values.role === "admin") {
-        inviteAdminMutation.mutate({
+  // Switch based on selected option
+  // For existing user, add role
+  // For new user, invite flow
+  const addMemberFormSubmit = useCallback(
+    addMemberForm.handleSubmit(async ({ user: { id, email }, role }) => {
+      addMemberForm.clearErrors();
+      if (inviteUserToWorkspace && id) {
+        return addRoleMutation.mutateAsync({
           companyId: company.id,
-          email: values.memberOrEmail,
+          userId: id,
+          role,
         });
-      } else {
-        inviteLawyerMutation.mutate({
+      } else if (role === "admin") {
+        return inviteAdminMutation.mutateAsync({
           companyId: company.id,
-          email: values.memberOrEmail,
+          email,
         });
       }
-    }
-  };
+      return inviteLawyerMutation.mutateAsync({
+        companyId: company.id,
+        email,
+      });
+    }),
+    [addMemberForm, addRoleMutation, company.id, inviteUserToWorkspace, inviteAdminMutation, inviteLawyerMutation],
+  );
 
   const handleRemoveRole = () => {
     if (confirmRevoke) {
@@ -367,7 +346,7 @@ export default function RolesPage() {
       <div className="grid gap-8">
         <hgroup>
           <h2 className="mb-1 text-xl font-bold">Roles</h2>
-          <p className="text-muted-foreground text-base">Use roles to grant deeper access to your workspace.</p>
+          <p className="text-muted-foreground text-sm">Use roles to grant deeper access to your workspace.</p>
         </hgroup>
         <div className="[&_td:first-child]:!pl-0 [&_td:last-child]:!pr-0 [&_th:first-child]:!pl-0 [&_th:last-child]:!pr-0">
           {adminsAndLawyers.length === 0 ? (
@@ -378,12 +357,7 @@ export default function RolesPage() {
                 table={table}
                 searchColumn="name"
                 actions={
-                  <Button
-                    variant="outline"
-                    size="small"
-                    onClick={() => setShowAddModal(true)}
-                    className="w-full md:w-auto"
-                  >
+                  <Button className="text-sm" onClick={() => setShowAddModal(true)} size="small" variant="outline">
                     <Plus className="size-4" />
                     Add member
                   </Button>
@@ -394,33 +368,30 @@ export default function RolesPage() {
         </div>
       </div>
 
+      {/* Original Add Member Modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="text-black sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Add a member</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-xl">Add a member</DialogTitle>
+            <DialogDescription className="text-sm text-black">
               Select someone or invite by email to give them the role that fits the work they'll be doing.
             </DialogDescription>
           </DialogHeader>
           <Form {...addMemberForm}>
-            <form
-              className="grid gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void addMemberForm.handleSubmit(handleSubmit)(e);
-              }}
-            >
+            <form onSubmit={(e) => void addMemberFormSubmit(e)} className="grid gap-y-4">
               <FormField
                 control={addMemberForm.control}
-                name="memberOrEmail"
+                name="user"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name or email</FormLabel>
+                    <FormLabel className="text-black">Name or email</FormLabel>
                     <FormControl>
-                      <UserOrEmailInput
-                        {...field}
-                        users={companyUsers}
-                        placeholder="Search by name or enter email..."
+                      <WorkspaceUserComboBox
+                        options={workspaceUsers}
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="Search by name or invite by email..."
+                        size="small"
                       />
                     </FormControl>
                     <FormMessage />
@@ -432,7 +403,7 @@ export default function RolesPage() {
                 name="role"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Role</FormLabel>
+                    <FormLabel className="text-black">Role</FormLabel>
                     <FormControl>
                       <ComboBox
                         options={[
@@ -441,39 +412,39 @@ export default function RolesPage() {
                         ]}
                         value={field.value}
                         onChange={field.onChange}
-                        placeholder="Select role..."
-                        showSearch={false}
+                        size="small"
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <div className="flex flex-row items-center justify-end gap-4">
-                {addRoleMutation.isError || inviteLawyerMutation.isError || inviteAdminMutation.isError ? (
-                  <div className="text-red text-sm">
-                    {addRoleMutation.error?.message ||
-                      inviteLawyerMutation.error?.message ||
-                      inviteAdminMutation.error?.message}
-                  </div>
+              <div className="mt-2 flex w-full justify-end">
+                {inviteUserToWorkspace ? (
+                  <MutationStatusButton type="submit" mutation={addRoleMutation} loadingText="Adding member...">
+                    <SendHorizonal className="size-4" />
+                    Add Member
+                  </MutationStatusButton>
                 ) : null}
-                <Button
-                  type="submit"
-                  disabled={
-                    !addMemberForm.formState.isValid ||
-                    addRoleMutation.isPending ||
-                    inviteLawyerMutation.isPending ||
-                    inviteAdminMutation.isPending
-                  }
-                >
-                  Add member
-                </Button>
+                {!inviteUserToWorkspace && selectedRole === "lawyer" && (
+                  <MutationStatusButton type="submit" mutation={inviteLawyerMutation} loadingText="Adding member...">
+                    <SendHorizonal className="size-4" />
+                    Add Member
+                  </MutationStatusButton>
+                )}
+                {!inviteUserToWorkspace && selectedRole === "admin" && (
+                  <MutationStatusButton type="submit" mutation={inviteAdminMutation} loadingText="Adding member...">
+                    <SendHorizonal className="size-4" />
+                    Add Member
+                  </MutationStatusButton>
+                )}
               </div>
             </form>
           </Form>
         </DialogContent>
       </Dialog>
 
+      {/* Remove Role Confirmation Dialog */}
       <Dialog open={!!confirmRevoke} onOpenChange={() => setConfirmRevoke(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

@@ -138,7 +138,7 @@ const LeaveWorkspaceSection = () => {
       await queryClient.invalidateQueries({ queryKey: ["currentUser"] });
       setTimeout(() => {
         setIsModalOpen(false);
-        router.push("/dashboard");
+        router.push("/invoices");
       }, 1000);
     },
     onError: (error: Error) => {

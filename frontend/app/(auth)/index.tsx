@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { SignInMethod } from "@/db/enums";
 import googleLogoLight from "@/images/google-light.svg";
+import { getSafeRedirectUrl } from "@/lib/authUtils";
 import logo from "@/public/logo-icon.svg";
 import { request } from "@/utils/request";
 
@@ -79,11 +80,9 @@ export function AuthPage({
       if (!session?.user.email) throw new Error("Invalid verification code");
 
       const redirectUrl = searchParams.get("redirect_url");
+      const safeRedirectUrl = getSafeRedirectUrl(redirectUrl);
       setRedirectInProgress(true);
-      router.replace(
-        // @ts-expect-error - Next currently does not allow checking this at runtime - the leading / ensures this is safe
-        redirectUrl && redirectUrl.startsWith("/") && !redirectUrl.startsWith("//") ? redirectUrl : "/dashboard",
-      );
+      window.location.replace(safeRedirectUrl);
     },
   });
   const emailForm = useForm({
@@ -114,11 +113,8 @@ export function AuthPage({
   const providerSignIn = (provider: SignInMethod) => {
     localStorage.setItem("last_sign_in_method", provider);
     const redirectUrlParam = searchParams.get("redirect_url");
-    const redirectUrl =
-      redirectUrlParam && redirectUrlParam.startsWith("/") && !redirectUrlParam.startsWith("//")
-        ? redirectUrlParam
-        : "/dashboard";
-    void signIn(provider, { callbackUrl: redirectUrl });
+    const safeRedirectUrl = getSafeRedirectUrl(redirectUrlParam);
+    void signIn(provider, { callbackUrl: safeRedirectUrl });
   };
 
   return (

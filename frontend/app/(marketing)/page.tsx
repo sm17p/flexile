@@ -1,9 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
 import type { ReactNode } from "react";
-import { authOptions } from "@/lib/auth";
 import logo from "@/public/flexile-logo.svg";
 import { cn } from "@/utils";
 import iconClock from "./icon-clock.svg";
@@ -19,13 +16,7 @@ const Section = ({ children, className }: { children: ReactNode; className?: str
   </section>
 );
 
-export default async function HomePage() {
-  const session = await getServerSession(authOptions);
-
-  if (session) {
-    redirect("/dashboard");
-  }
-
+export default function HomePage() {
   return (
     <>
       <nav className="fixed top-0 right-0 left-0 z-50 m-0 box-border flex h-20 w-full items-center justify-between bg-black p-0 text-white">

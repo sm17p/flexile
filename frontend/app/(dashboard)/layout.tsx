@@ -5,8 +5,8 @@ import { ChevronDown, ChevronRight, LogOut, MessageCircleQuestion, Settings, Spa
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
 import React from "react";
+
 import { GettingStarted } from "@/components/GettingStarted";
 import { MobileBottomNav } from "@/components/navigation/MobileBottomNav";
 import { NavBadge } from "@/components/navigation/NavBadge";
@@ -32,8 +32,9 @@ import {
   SidebarMenuSubItem,
   SidebarProvider,
 } from "@/components/ui/sidebar";
-import { useCurrentCompany, useCurrentUser, useUserStore } from "@/global";
+import { useCurrentCompany, useCurrentUser } from "@/global";
 import defaultCompanyLogo from "@/images/default-company-logo.svg";
+import { useSignOut } from "@/lib/authUtils";
 import { useSwitchCompany } from "@/lib/companySwitcher";
 import { hasSubItems, type NavLinkInfo, useNavLinks } from "@/lib/useNavLinks";
 import { UserDataProvider } from "@/trpc/client";
@@ -46,10 +47,11 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [showTryEquity, setShowTryEquity] = React.useState(true);
   const [hovered, setHovered] = React.useState(false);
-  const canShowTryEquity = user.roles.administrator && !company.equityEnabled;
-  const { logout } = useUserStore();
-  const isDefaultLogo = !company.logo_url || company.logo_url.includes("default-company-logo");
+  const signOutUser = useSignOut();
   const { switchCompany } = useSwitchCompany();
+
+  const canShowTryEquity = user.roles.administrator && !company.equityEnabled;
+  const isDefaultLogo = !company.logo_url || company.logo_url.includes("default-company-logo");
 
   return (
     <SidebarProvider>
@@ -184,10 +186,7 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
                 badge={<SupportBadge />}
               />
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  onClick={() => void signOut({ redirect: false }).then(logout)}
-                  className="cursor-pointer"
-                >
+                <SidebarMenuButton onClick={() => void signOutUser()} className="cursor-pointer">
                   <LogOut className="size-6" />
                   <span>Log out</span>
                 </SidebarMenuButton>

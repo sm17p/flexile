@@ -4,14 +4,14 @@ import { ChevronLeft, ChevronRight, LogOut, MessageCircleQuestion, MoreHorizonta
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
 import React, { useMemo, useState } from "react";
 import ReactDOM from "react-dom";
 import { NavBadge } from "@/components/navigation/NavBadge";
 import { SupportBadge } from "@/components/Support";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { useCurrentUser, useUserStore } from "@/global";
+import { useCurrentUser } from "@/global";
 import defaultCompanyLogo from "@/images/default-company-logo.svg";
+import { useSignOut } from "@/lib/authUtils";
 import { useSwitchCompany } from "@/lib/companySwitcher";
 import { hasSubItems, type NavLinkInfo, useNavLinks } from "@/lib/useNavLinks";
 import { cn } from "@/utils/index";
@@ -283,13 +283,10 @@ const OverflowMenu = ({ items, onOpenChange, open }: OverflowMenuProps) => {
   const user = useCurrentUser();
   const pathname = usePathname();
   const [navState, setNavState] = useState<NavigationState>({ view: "main" });
-  const { data: session } = useSession();
-  const { logout } = useUserStore();
+  const signOutUser = useSignOut();
 
-  const handleLogout = async () => {
-    if (session?.user) await signOut({ redirect: false });
-    logout();
-    window.location.href = "/login";
+  const handleLogout = () => {
+    void signOutUser({ callbackUrl: "/login" });
   };
 
   const currentCompany = useMemo(
@@ -375,7 +372,7 @@ const OverflowMenu = ({ items, onOpenChange, open }: OverflowMenuProps) => {
             <button
               className="flex w-full items-center gap-3 rounded-none px-6 py-3 text-left transition-colors"
               aria-label="Log out"
-              onClick={() => void handleLogout()}
+              onClick={handleLogout}
             >
               <LogOut className="h-5 w-5" />
               <span className="font-normal">Log out</span>

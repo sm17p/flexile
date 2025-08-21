@@ -65,7 +65,7 @@ export const ErrorPage = ({ code }: { code: 404 | 403 | 500 }) => {
       <Image src={logo} className="size-40 invert" alt="" />
       <div className="text-3xl font-bold">{heading}</div>
       <div>{text}</div>
-      <Link href="/dashboard" className={linkClasses}>
+      <Link href="/invoices" className={linkClasses}>
         Go home?
       </Link>
     </main>

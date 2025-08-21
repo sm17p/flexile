@@ -1,11 +1,44 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 import env from "@/env";
+import { hasRequiredRole, isAuthRoute, isExcludedRoute, isProtectedRoute, SAFE_ROUTES } from "@/lib/routes";
 
-export default function middleware(req: NextRequest) {
-  // TODO: Bring back nonce and remove unsafe-inline
-  // const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const { NODE_ENV } = process.env; // destructure to prevent inlining
+export default async function middleware(req: NextRequest): Promise<NextResponse> {
+  const { pathname } = req.nextUrl;
+
+  // Skip middleware for excluded routes
+  if (isExcludedRoute(pathname)) {
+    return NextResponse.next();
+  }
+
+  const token = await getToken({ req, secret: env.NEXTAUTH_SECRET });
+  const isAuthenticated = !!token;
+  const userRoles = token?.roles;
+
+  let response: NextResponse;
+
+  if (isAuthenticated && isAuthRoute(pathname)) {
+    // Redirect authenticated users away from auth pages
+    response = NextResponse.redirect(new URL(SAFE_ROUTES.DASHBOARD, req.url));
+  } else if (isProtectedRoute(pathname)) {
+    if (!isAuthenticated) {
+      // Redirect unauthenticated users to login
+      const loginUrl = new URL(SAFE_ROUTES.LOGIN, req.url);
+      loginUrl.searchParams.set("redirect_url", pathname + req.nextUrl.search);
+      response = NextResponse.redirect(loginUrl);
+    } else if (!hasRequiredRole(pathname, userRoles as Record<string, unknown> | undefined)) {
+      // Redirect users without required role to dashboard
+      response = NextResponse.redirect(new URL(SAFE_ROUTES.DASHBOARD, req.url));
+    } else {
+      response = NextResponse.next();
+    }
+  } else {
+    response = NextResponse.next();
+  }
+
+  // Apply CSP headers
+  const { NODE_ENV } = process.env;
   const s3Urls = [env.S3_PRIVATE_BUCKET, env.S3_PUBLIC_BUCKET]
     .map((bucket) => `https://${bucket}.s3.${env.AWS_REGION}.amazonaws.com https://${bucket}.s3.amazonaws.com`)
     .join(" ");
@@ -30,12 +63,14 @@ export default function middleware(req: NextRequest) {
     .replace(/\s{2,}/gu, " ")
     .trim();
 
-  const requestHeaders = new Headers(req.headers);
-  // requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("Content-Security-Policy", cspHeader);
-
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", cspHeader);
+
+  if (!response.headers.get("location")) {
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set("Content-Security-Policy", cspHeader);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   return response;
 }
 

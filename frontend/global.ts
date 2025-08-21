@@ -1,5 +1,3 @@
-import { redirect, RedirectType, usePathname } from "next/navigation";
-import { useEffect } from "react";
 import { create } from "zustand";
 import { combine } from "zustand/middleware";
 import { type CurrentUser, currentUserSchema } from "@/models/user";
@@ -25,19 +23,20 @@ export const useUserStore = create(
 );
 
 export const useCurrentUser = () => {
-  const pathname = usePathname();
-  const { user, setRedirected } = useUserStore((state) => state);
+  const { user } = useUserStore((state) => state);
+
   if (!user) {
-    // Preserve full URL including query parameters
-    const fullUrl = typeof window !== "undefined" ? pathname + window.location.search : pathname;
-    throw redirect(`/login?${new URLSearchParams({ redirect_url: fullUrl })}`, RedirectType.replace);
+    throw new Error("User not authenticated");
   }
-  if (user.onboardingPath && user.onboardingPath !== window.location.pathname)
-    throw redirect(user.onboardingPath, RedirectType.replace);
-  useEffect(setRedirected, []);
+
   return user;
 };
 export const useCurrentCompany = () => {
   const user = useCurrentUser();
   return assertDefined(user.companies.find((c) => c.id === user.currentCompanyId));
+};
+
+export const useCurrentUserSafe = () => {
+  const { user } = useUserStore((state) => state);
+  return user;
 };

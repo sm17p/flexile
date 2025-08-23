@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class CreatePdf
+  include GroverConfig
+
   attr_reader :body_html, :recipient_country_code
 
   def initialize(body_html:, recipient_country_code: nil)
@@ -13,12 +15,13 @@ class CreatePdf
                                         locals: { body_html: },
                                         layout: false,
                                         formats: [:html]
-    Grover.new(html,
-               format: page_size,
-               print_background: true,
-               margin: { top: "2cm", left: "2cm", bottom: "2cm", right: "2cm" },
-               launch_args: ["--disable-web-security", "--no-sandbox", "--disable-setuid-sandbox"],
-               executable_path: ENV["PUPPETEER_EXECUTABLE_PATH"]).to_pdf
+
+    options = default_grover_options.merge(
+      format: page_size,
+      margin: { top: "2cm", left: "2cm", bottom: "2cm", right: "2cm" }
+    )
+
+    Grover.new(html, options).to_pdf
   end
 
   private

@@ -16,7 +16,11 @@ class CompanyUsersPresenter
   end
 
   def administrators_props
-    admins = @company.company_administrators.includes(:user).order(:id)
+    admins = @company.company_administrators
+                    .joins(:user)
+                    .order(:id, Arel.sql("COALESCE(users.legal_name, users.preferred_name, users.email)"))
+                    .includes(:user)
+
     primary_admin = admins.first
 
     admins.map do |admin|
@@ -32,11 +36,15 @@ class CompanyUsersPresenter
         isOwner: primary_admin&.id == admin.id,
         allRoles: roles,
       }
-    end.sort_by { |admin| [admin[:isOwner] ? 0 : 1, admin[:name]] }
+    end
   end
 
   def lawyers_props
-    @company.company_lawyers.includes(:user).order(:id).map do |lawyer|
+    @company.company_lawyers
+            .joins(:user)
+            .order(Arel.sql("COALESCE(users.legal_name, users.preferred_name, users.email)"))
+            .includes(:user)
+            .map do |lawyer|
       user = lawyer.user
       roles = get_user_roles(user)
 
@@ -49,7 +57,7 @@ class CompanyUsersPresenter
         isOwner: is_primary_admin?(user),
         allRoles: roles,
       }
-    end.sort_by { |lawyer| lawyer[:name] }
+    end
   end
 
   def all_users_props
@@ -70,6 +78,44 @@ class CompanyUsersPresenter
     end
 
     all_users.sort_by { |user| user[:name] }
+  end
+
+  def users_without_role_props(exclude_roled_user_ids: [], current_user: nil)
+    company_user_ids = Set.new
+    @company.company_investors.includes(:user).find_each { |ci| company_user_ids.add(ci.user_id) }
+    @company.company_workers.includes(:user).find_each { |cw| company_user_ids.add(cw.user_id) }
+
+    # Return empty array if no company-related users exist
+    return [] if company_user_ids.empty?
+
+    # Get users who already have workspace roles
+    excluded_user_external_ids = Set.new(all_users_props.map { |user| user[:id] })
+
+    # Add explicitly excluded user IDs from params
+    exclude_roled_user_ids.each { |id| excluded_user_external_ids.add(id) }
+
+    # Add current user to exclusions
+    excluded_user_external_ids.add(current_user.external_id) if current_user
+
+    # Filter and sort users at database level
+    eligible_users = User.where(id: company_user_ids)
+                        .where.not(external_id: excluded_user_external_ids.to_a)
+                        .where(invitation_token: nil) # Exclude pending invitations
+                        .order(Arel.sql("COALESCE(legal_name, preferred_name, email)"))
+                        .includes(:company_investors, :company_workers)
+
+    # Transform results (already sorted by database)
+    eligible_users.map do |user|
+      {
+        id: user.external_id,
+        email: user.email,
+        name: user.legal_name || user.preferred_name || user.email,
+        isInvestor: user.company_investors.any? { |ci| ci.company_id == @company.id },
+        isContractor: user.company_workers.any? { |cw| cw.company_id == @company.id },
+        isAdministrator: false,
+        isLawyer: false,
+      }
+    end
   end
 
   private

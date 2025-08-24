@@ -1009,6 +1009,44 @@ export const company_administrator_settings_equity_path = /*#__PURE__*/ __jsr.r(
 
 /**
  * Generates rails route to
+ * /internal/companies/:company_id/administrator/settings/workspace_roles/:id(.:format)
+ * @param {any} company_id
+ * @param {any} id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const company_administrator_settings_workspace_role_url = /*#__PURE__*/ __jsr.r({"company_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"internal"],[2,[7,"/"],[2,[6,"companies"],[2,[7,"/"],[2,[3,"company_id"],[2,[7,"/"],[2,[6,"administrator"],[2,[7,"/"],[2,[6,"settings"],[2,[7,"/"],[2,[6,"workspace_roles"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]], true);
+
+/**
+ * Generates rails route to
+ * /internal/companies/:company_id/administrator/settings/workspace_roles/:id(.:format)
+ * @param {any} company_id
+ * @param {any} id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const company_administrator_settings_workspace_role_path = /*#__PURE__*/ __jsr.r({"company_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"internal"],[2,[7,"/"],[2,[6,"companies"],[2,[7,"/"],[2,[3,"company_id"],[2,[7,"/"],[2,[6,"administrator"],[2,[7,"/"],[2,[6,"settings"],[2,[7,"/"],[2,[6,"workspace_roles"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]);
+
+/**
+ * Generates rails route to
+ * /internal/companies/:company_id/administrator/settings/workspace_roles(.:format)
+ * @param {any} company_id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const company_administrator_settings_workspace_roles_url = /*#__PURE__*/ __jsr.r({"company_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"internal"],[2,[7,"/"],[2,[6,"companies"],[2,[7,"/"],[2,[3,"company_id"],[2,[7,"/"],[2,[6,"administrator"],[2,[7,"/"],[2,[6,"settings"],[2,[7,"/"],[2,[6,"workspace_roles"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]], true);
+
+/**
+ * Generates rails route to
+ * /internal/companies/:company_id/administrator/settings/workspace_roles(.:format)
+ * @param {any} company_id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const company_administrator_settings_workspace_roles_path = /*#__PURE__*/ __jsr.r({"company_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"internal"],[2,[7,"/"],[2,[6,"companies"],[2,[7,"/"],[2,[3,"company_id"],[2,[7,"/"],[2,[6,"administrator"],[2,[7,"/"],[2,[6,"settings"],[2,[7,"/"],[2,[6,"workspace_roles"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+
+/**
+ * Generates rails route to
  * /internal/companies/:company_id/administrator/stripe_microdeposit_verifications(.:format)
  * @param {any} company_id
  * @param {object | undefined} options

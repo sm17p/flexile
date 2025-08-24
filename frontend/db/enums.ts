@@ -50,3 +50,5 @@ export const optionGrantIssueDateRelationships = [
   "executive",
   "board_member",
 ] as const;
+
+export const workspaceMemberRoles = ["Owner", "Admin", "Lawyer"] as const;

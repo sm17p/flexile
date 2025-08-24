@@ -34,6 +34,7 @@ scope path: :internal, module: :internal do
       namespace :settings do
         resource :equity, only: [:show, :update], controller: "equity"
         resource :bank_accounts, only: [:show, :create], controller: "bank_accounts"
+        resources :workspace_roles, only: [:index]
       end
 
       resources :quickbooks, only: :update do

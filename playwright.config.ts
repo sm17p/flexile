@@ -23,7 +23,7 @@ export default defineConfig({
     timezoneId: "UTC",
   },
   expect: { timeout: 30000, toPass: { timeout: 30000 } },
-  timeout: process.env.CI ? 30000 : 120000,
+  timeout: process.env.CI ? 30000 : 45000,
   projects: [
     {
       name: "setup",
@@ -43,5 +43,7 @@ export default defineConfig({
     command: "bin/test_server",
     url: "http://localhost:3100",
     reuseExistingServer: !process.env.CI,
+    stdout: "ignore",
+    stderr: "pipe",
   },
 });

@@ -20,7 +20,7 @@ env:
 
 jobs:
   rspec:
-    runs-on: ubicloud-standard-2
+    runs-on: ubuntu-latest
 
     services:
       postgres:
@@ -55,11 +55,11 @@ jobs:
         env:
           RUBY_YJIT_ENABLE: 1
         run: cd backend && bundle exec rspec --format RSpec::Github::Formatter --tag ~skip --tag ~type:system --format progress
-        timeout-minutes: 20
+        timeout-minutes: 10
 
   playwright:
     name: playwright
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4

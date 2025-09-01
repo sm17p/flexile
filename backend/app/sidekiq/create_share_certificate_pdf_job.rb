@@ -2,6 +2,8 @@
 
 class CreateShareCertificatePdfJob
   include Sidekiq::Job
+  include GroverConfig
+
   sidekiq_options retry: 5
 
   def perform(share_holding_id)
@@ -18,12 +20,12 @@ class CreateShareCertificatePdfJob
                                         locals:,
                                         layout: "pdf",
                                         formats: [:html]
-    pdf_content = Grover.new(html,
-                             landscape: true, print_background: true,
-                             margin: { top: "1.5cm", left: "1.5cm", bottom: "1.5cm", right: "1.5cm" },
-                             launch_args: ["--disable-web-security", "--no-sandbox", "--disable-setuid-sandbox"],
-                             executable_path: ENV["PUPPETEER_EXECUTABLE_PATH"]).to_pdf
+    options = default_grover_options.merge(
+      landscape: true,
+      margin: { top: "1.5cm", left: "1.5cm", bottom: "1.5cm", right: "1.5cm" }
+    )
 
+    pdf_content = Grover.new(html, options).to_pdf
     certificate_name = "#{share_holding.name} Share Certificate"
     share_certificate = Document.new(company:, document_type: :share_certificate, name: certificate_name, year: Time.current.year)
     share_certificate.attachments.attach(

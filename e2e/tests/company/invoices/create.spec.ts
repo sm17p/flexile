@@ -19,6 +19,7 @@ import {
   invoices,
   users,
 } from "@/db/schema";
+import { assertDefined } from "@/utils/assert";
 
 test.describe("invoice creation", () => {
   let company: typeof companies.$inferSelect;
@@ -442,5 +443,72 @@ test.describe("invoice creation", () => {
     await page.getByLabel("Merchant").fill("Office Supplies Store");
     await page.getByLabel("Amount").fill("42.99");
     await expect(page.getByText("Total expenses$42.99")).toBeVisible();
+  });
+
+  test("prevents regression: invoice with expense can be re-opened after creation", async ({ page }) => {
+    // This test prevents the regression where expense ID was passed as number instead of string
+    // causing crashes when re-opening invoices with expense items
+    await db.insert(expenseCategories).values({
+      companyId: company.id,
+      name: "Office Supplies",
+    });
+
+    await login(page, contractorUser, "/invoices/new");
+
+    // Add a line item
+    await page.getByPlaceholder("Description").fill("Development work");
+    await fillByLabel(page, "Hours / Qty", "02:00", { index: 0 });
+
+    // Add an expense item
+    await page.getByLabel("Add expense").setInputFiles({
+      name: "office-supplies-receipt.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("office supplies receipt content"),
+    });
+
+    await page.getByLabel("Merchant").fill("Office Depot");
+    await page.getByLabel("Amount").fill("125.50");
+
+    await expect(page.getByText("Total services$120")).toBeVisible();
+    await expect(page.getByText("Total expenses$125.50")).toBeVisible();
+
+    // Submit the invoice
+    await page.getByRole("button", { name: "Send invoice" }).click();
+    await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
+
+    // Verify invoice appears in list
+    await expect(page.locator("tbody")).toContainText("$245.50"); // $120 + $125.50
+
+    // Click on the invoice to open it (this would crash if expense ID was numeric)
+    await page.getByRole("row").filter({ hasText: "Awaiting approval" }).first().click();
+
+    // Verify we can view the invoice details without crashing
+    await expect(page.getByText("Development work")).toBeVisible();
+    await expect(page.getByText("Office Depot")).toBeVisible();
+    await expect(page.getByText("$125.50")).toBeVisible();
+    await expect(page.getByText("Total$245.50")).toBeVisible();
+
+    // Verify we can edit the invoice without crashing
+    await page.getByRole("link", { name: "Edit invoice" }).click();
+    await expect(page.getByRole("heading", { name: "Edit invoice" })).toBeVisible();
+
+    // Verify expense data is loaded correctly in edit form
+    await expect(page.getByPlaceholder("Description").first()).toHaveValue("Development work");
+    await expect(page.getByLabel("Hours / Qty")).toHaveValue("02:00");
+    await expect(page.getByLabel("Merchant")).toHaveValue("Office Depot");
+    await expect(page.getByLabel("Amount")).toHaveValue("125.50");
+
+    // Verify database consistency - expense should have external_id (string)
+    const invoice = await db.query.invoices
+      .findFirst({ where: eq(invoices.companyId, company.id), orderBy: desc(invoices.id) })
+      .then(takeOrThrow);
+
+    const expense = await db.query.invoiceExpenses
+      .findFirst({ where: eq(invoiceExpenses.invoiceId, invoice.id) })
+      .then(takeOrThrow);
+
+    expect(expense.externalId).toBeDefined();
+    expect(typeof expense.externalId).toBe("string");
+    expect(assertDefined(expense.externalId).length).toBeGreaterThan(0);
   });
 });

@@ -611,7 +611,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_10_01_000000) do
     t.string "description", null: false
     t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.datetime "updated_at", null: false
+    t.string "external_id", null: false
     t.index ["expense_category_id"], name: "index_invoice_expenses_on_expense_category_id"
+    t.index ["external_id"], name: "index_invoice_expenses_on_external_id", unique: true
     t.index ["invoice_id"], name: "index_invoice_expenses_on_invoice_id"
   end
 

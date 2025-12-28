@@ -23,7 +23,7 @@ export default defineConfig({
     timezoneId: "UTC",
   },
   expect: { timeout: 30000, toPass: { timeout: 30000 } },
-  timeout: process.env.CI ? 30000 : 120000,
+  timeout: process.env.CI ? 30000 : 45000,
   projects: [
     {
       name: "setup",
@@ -33,7 +33,7 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
-        viewport: { width: 1920, height: 1080 },
+        viewport: { width: 1440, height: 800 },
       },
       dependencies: ["setup"],
     },
